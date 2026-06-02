@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  familychat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: familychat
+    restart: unless-stopped
+    environment:
+      - PORT=8080
+      - NODE_ENV=production
+      - DOMAIN=${DOMAIN}
+      - TURN_SECRET=${TURN_SECRET}
+    healthcheck:
+      test: ["CMD","wget","-qO-","http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  coturn:
+    image: coturn/coturn:latest
+    container_name: familychat-coturn
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - coturn_logs:/var/log/coturn
+    command: ["--config","/etc/coturn/turnserver.conf"]
+
+  nginx:
+    image: nginx:alpine
+    container_name: familychat-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/familychat.conf:/etc/nginx/conf.d/default.conf:ro
+      - letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - familychat
+    networks:
+      - internal
+      - external
+
+  certbot:
+    image: certbot/certbot
+    container_name: familychat-certbot
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+    entrypoint: >
+      sh -c "certbot certonly --standalone
+             -d ${DOMAIN} --email ${EMAIL} --agree-tos --no-eff-email
+             --non-interactive 2>&1;
+             trap exit TERM;
+             while :; do
+               certbot renew --quiet 2>&1;
+               sleep 12h & wait $!;
+             done"
+    networks:
+      - external
+
+volumes:
+  letsencrypt:
+  coturn_logs:
+
+networks:
+  internal:
+    driver: bridge
+  external:
+    driver: bridge
