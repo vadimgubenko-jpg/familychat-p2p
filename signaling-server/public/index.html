@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FamilyChat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#21262d;--text:#e6edf3;--muted:#7d8590;--accent:#3fb950;--line:#30363d;--red:#f85149;--yellow:#d29922}
+*{box-sizing:border-box}html{font-size:15px}body{margin:0;font-family:Inter,sans-serif;background:var(--bg);color:var(--text);height:100dvh;overflow:hidden;display:flex;flex-direction:column}
+.wrap{display:grid;grid-template-columns:300px 1fr;flex:1;overflow:hidden}
+.side{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--panel)}
+.side-header{padding:16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:700;font-size:1.1rem;letter-spacing:-.3px}
+.ws-dot{width:8px;height:8px;border-radius:50%;background:var(--red)}
+.ws-dot.ok{background:var(--accent);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.join-form{padding:16px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line)}
+.inp{padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--text);outline:none;width:100%;font:inherit}
+.inp:focus{border-color:var(--accent)}
+.btn{padding:9px 14px;border:none;border-radius:8px;background:var(--accent);color:#0d1117;font:inherit;font-weight:600;cursor:pointer}
+.btn:hover{filter:brightness(1.1)}.btn.ghost{background:var(--panel2);color:var(--text)}
+.peer-list{flex:1;overflow:auto;padding:8px}
+.peer-item{padding:10px 12px;border-radius:8px;cursor:pointer;display:flex;gap:10px;align-items:center}
+.peer-item:hover{background:var(--panel2)}
+.av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#0d1117;flex-shrink:0;font-size:.85rem}
+.peer-name{font-weight:600}.peer-sub{font-size:.75rem;color:var(--muted)}
+.chat{display:flex;flex-direction:column;flex:1;overflow:hidden}
+.chat-header{padding:14px 18px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;justify-content:space-between;align-items:center}
+.msgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:8px;scroll-behavior:smooth}
+.msg{max-width:68%;padding:10px 14px;border-radius:14px;background:var(--panel2);line-height:1.55;word-break:break-word}
+.msg.own{align-self:flex-end;background:#1a3a26}
+.msg-meta{font-size:.7rem;color:var(--muted);margin-top:4px}
+.composer{padding:14px 16px;border-top:1px solid var(--line);background:var(--panel);display:flex;gap:8px}
+.composer textarea{flex:1;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:var(--text);resize:none;font:inherit;outline:none}
+.composer textarea:focus{border-color:var(--accent)}
+.send-btn{width:42px;height:42px;border-radius:50%;background:var(--accent);color:#0d1117;display:flex;align-items:center;justify-content:center;border:none;cursor:pointer;flex-shrink:0;align-self:flex-end}
+.p2p-badge{font-size:.7rem;color:var(--accent);background:#12261a;padding:3px 8px;border-radius:20px}
+.empty{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);text-align:center;padding:32px}
+@media(max-width:768px){.wrap{grid-template-columns:1fr}.side{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside class="side">
+    <div class="side-header">
+      <div class="logo">🏠 FamilyChat</div>
+      <div class="ws-dot" id="wsDot"></div>
+    </div>
+    <div class="join-form">
+      <input id="myName" class="inp" placeholder="Ваше имя (Мама, Папа...)" maxlength="24"/>
+      <input id="myRoom" class="inp" placeholder="Комната" value="family-2026" maxlength="24"/>
+      <button class="btn" onclick="joinRoom()">Войти в комнату</button>
+      <button class="btn ghost" onclick="copyRoomCode()" id="copyBtn" style="display:none">Скопировать код комнаты</button>
+    </div>
+    <div class="peer-list" id="peerList"><div style="padding:12px;font-size:.8rem;color:var(--muted)">Войдите в комнату</div></div>
+  </aside>
+  <main class="chat">
+    <div class="chat-header">
+      <div><strong id="chatRoom">Выберите комнату</strong></div>
+      <div class="p2p-badge">WebRTC P2P</div>
+    </div>
+    <div class="msgs" id="msgs"><div class="empty"><div style="font-size:2.5rem">💬</div><div>Войдите в комнату и начните общение</div></div></div>
+    <div class="composer">
+      <textarea id="msgInput" rows="2" placeholder="Написать сообщение…" onkeydown="handleKey(event)"></textarea>
+      <button class="send-btn" onclick="sendMessage()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </main>
+</div>
+<script>
+const state={ws:null,id:null,name:'',room:'',peers:{},channels:{},iceConfig:null};
+const colors=['#3fb950','#d29922','#58a6ff','#f47067','#79c0ff'];
+function color(n){let h=0;for(let c of n)h=((h<<5)-h)+c.charCodeAt(0);return colors[Math.abs(h)%colors.length]}
+function initials(n){return n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}
+const $=id=>document.getElementById(id);
+function now(){return new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}
+async function fetchIce(){try{const r=await fetch('/ice-config');state.iceConfig=await r.json()}catch{state.iceConfig={iceServers:[{urls:['stun:stun.l.google.com:19302']}]}}}
+fetchIce();
+function addMsg(text,own=false,sender=''){
+  const el=$('msgs'),d=document.createElement('div');
+  d.className='msg'+(own?' own':'');
+  d.innerHTML=`<div>${text}</div><div class="msg-meta">${own?'Я':sender} · ${now()}</div>`;
+  el.appendChild(d);el.scrollTop=el.scrollHeight;
+}
+function renderPeers(){
+  const el=$('peerList'),peers=Object.values(state.peers);
+  if(!peers.length){el.innerHTML='<div style="padding:12px;font-size:.8rem;color:var(--muted)">Ждём других...</div>';return}
+  el.innerHTML='<div style="padding:8px 12px 4px;font-size:.75rem;color:var(--muted)">ОНЛАЙН</div>';
+  peers.forEach(p=>{
+    const d=document.createElement('div');d.className='peer-item';
+    const col=color(p.name||'x');
+    d.innerHTML=`<div class="av" style="background:${col}">${initials(p.name||'?')}</div><div><div class="peer-name">${p.name||'Участник'}</div><div class="peer-sub">${state.channels[p.id]?.readyState==='open'?'P2P ●':'Соединяем...'}</div></div>`;
+    el.appendChild(d);
+  });
+}
+function joinRoom(){
+  state.name=$('myName').value.trim()||'Гость';
+  state.room=$('myRoom').value.trim()||'family-2026';
+  $('chatRoom').textContent=state.room;
+  $('copyBtn').style.display='block';
+  connectWs();
+}
+function copyRoomCode(){navigator.clipboard.writeText(state.room);$('copyBtn').textContent='Скопировано ✓';setTimeout(()=>$('copyBtn').textContent='Скопировать код комнаты',2000)}
+function connectWs(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  const ws=new WebSocket(`${proto}://${location.host}/ws`);
+  state.ws=ws;
+  ws.onopen=()=>{$('wsDot').className='ws-dot ok';ws.send(JSON.stringify({type:'join',room:state.room,name:state.name}));addMsg(`Вы вошли в комнату "${state.room}"`,true)};
+  ws.onclose=()=>{$('wsDot').className='ws-dot';setTimeout(connectWs,3000)};
+  ws.onmessage=async ev=>{
+    const msg=JSON.parse(ev.data);
+    if(msg.type==='welcome')state.id=msg.id;
+    if(msg.type==='peers')msg.peers.forEach(async p=>{if(!state.peers[p.id]){state.peers[p.id]={...p};renderPeers();await createOffer(p.id)}});
+    if(msg.type==='peer-joined'){state.peers[msg.id]={id:msg.id,name:msg.name};renderPeers();addMsg(`${msg.name} вошёл(а) в комнату`,false,'Система')}
+    if(msg.type==='answer')await state.peers[msg.from]?.pc?.setRemoteDescription({type:'answer',sdp:msg.sdp});
+    if(msg.type==='offer')await handleOffer(msg.from,msg.sdp,msg.name);
+    if(msg.type==='ice'){const pc=state.peers[msg.from]?.pc;if(pc&&msg.candidate)await pc.addIceCandidate(msg.candidate)}
+    if(msg.type==='peer-left'){const name=state.peers[msg.id]?.name||'Участник';delete state.peers[msg.id];delete state.channels[msg.id];renderPeers();addMsg(`${name} вышел(а)`,false,'Система')}
+  };
+}
+async function createOffer(peerId){
+  const pc=new RTCPeerConnection(state.iceConfig);
+  state.peers[peerId]=state.peers[peerId]||{};state.peers[peerId].pc=pc;
+  wirePc(peerId,pc);const ch=pc.createDataChannel('chat');attachCh(peerId,ch);
+  const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+  state.ws.send(JSON.stringify({type:'offer',to:peerId,sdp:offer.sdp,name:state.name}));
+}
+async function handleOffer(peerId,sdp,name){
+  const pc=new RTCPeerConnection(state.iceConfig);
+  state.peers[peerId]=state.peers[peerId]||{name};state.peers[peerId].pc=pc;
+  wirePc(peerId,pc);await pc.setRemoteDescription({type:'offer',sdp});
+  const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
+  state.ws.send(JSON.stringify({type:'answer',to:peerId,sdp:answer.sdp,name:state.name}));
+  renderPeers();
+}
+function wirePc(peerId,pc){
+  pc.onicecandidate=e=>{if(e.candidate)state.ws.send(JSON.stringify({type:'ice',to:peerId,candidate:e.candidate}))};
+  pc.ondatachannel=e=>attachCh(peerId,e.channel);
+  pc.onconnectionstatechange=()=>renderPeers();
+}
+function attachCh(peerId,ch){
+  state.channels[peerId]=ch;
+  ch.onopen=()=>{renderPeers();addMsg(`P2P открыт с ${state.peers[peerId]?.name||peerId}`,false,'Система')};
+  ch.onmessage=e=>addMsg(e.data,false,state.peers[peerId]?.name||'Собеседник');
+  ch.onclose=()=>renderPeers();
+}
+function sendMessage(){const t=$('msgInput').value.trim();if(!t)return;addMsg(t,true);Object.values(state.channels).forEach(ch=>{if(ch.readyState==='open')ch.send(t)});$('msgInput').value=''}
+function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}}
+</script>
+</body>
+</html>
