@@ -11,28 +11,36 @@ const app    = express();
 const server = createServer(app);
 const wss    = new WebSocketServer({ server, path: "/ws" });
 const PORT   = process.env.PORT || 8080;
-const TURN_SECRET = process.env.TURN_SECRET || "dev-secret";
+
+// TURN config — can be from env or defaults to no relay
+const TURN_HOST = process.env.TURN_HOST || null;
+const TURN_PORT = process.env.TURN_PORT ? parseInt(process.env.TURN_PORT) : 3478;
+const TURN_USER = process.env.TURN_USER || "familychat";
+const TURN_PASS = process.env.TURN_PASS || "familychat-secret";
+
 const rooms  = new Map();
 const clients= new Map();
 
 function turnCredentials() {
+  if (!TURN_HOST) return null;
   const ttl  = Math.floor(Date.now() / 1000) + 86400;
-  const user = `${ttl}:familychat`;
-  const pass = createHmac("sha1", TURN_SECRET).update(user).digest("base64");
+  const user = `${ttl}:${TURN_USER}`;
+  const pass = createHmac("sha1", TURN_PASS).update(user).digest("base64");
   return { username: user, credential: pass };
 }
 
 app.use(express.static(path.join(__dirname, "public")));
-app.get("/health",  (_, res) => res.json({ ok: true, ts: Date.now() }));
+app.get("/health", (_, res) => res.json({ ok: true, ts: Date.now() }));
 app.get("/ice-config", (_, res) => {
   const cred = turnCredentials();
-  res.json({
-    iceServers: [
-      { urls: ["stun:stun.l.google.com:19302"] },
-      { urls: [`turn:${process.env.DOMAIN || "localhost"}:3478`], ...cred },
-      { urls: [`turns:${process.env.DOMAIN || "localhost"}:5349`], ...cred },
-    ]
-  });
+  const iceServers = [
+    { urls: ["stun:stun.l.google.com:19302"] },
+    { urls: ["stun:stun1.l.google.com:19302"] },
+  ];
+  if (cred && TURN_HOST) {
+    iceServers.push({ urls: [`turn:${TURN_HOST}:${TURN_PORT}`], ...cred });
+  }
+  res.json({ iceServers });
 });
 
 function send(ws, data){ if(ws.readyState===1) ws.send(JSON.stringify(data)); }
@@ -79,4 +87,11 @@ wss.on("connection", ws => {
   });
 });
 
-server.listen(PORT, ()=>console.log(`FamilyChat signaling :${PORT}`));
+server.listen(PORT, ()=>{
+  console.log(`FamilyChat signaling on :${PORT}`);
+  if (TURN_HOST) {
+    console.log(`  TURN relay: ${TURN_HOST}:${TURN_PORT}`);
+  } else {
+    console.log("  No TURN relay configured — P2P via Google STUN only");
+  }
+});
